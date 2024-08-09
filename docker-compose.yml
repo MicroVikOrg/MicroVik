@@ -1,0 +1,225 @@
+version: '3.8'
+
+x-kong-config:
+  &kong-env
+  KONG_DATABASE: ${KONG_DATABASE}
+  KONG_PG_DATABASE: ${KONG_PG_DATABASE}
+  KONG_PG_HOST: db
+  KONG_PG_USER: ${KONG_PG_USER}
+  KONG_PG_PASSWORD_FILE: /run/secrets/kong_postgres_password
+
+volumes:
+  kong_data: {}
+  kong_prefix_vol:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  kong_tmp_vol:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  microvik-data:
+  redis-data:
+  microvik-data-test:
+  storagemanager:
+
+networks:
+  kong-net:
+    driver: bridge
+  microvik-net:
+    driver: bridge
+
+services:
+# kong 
+  kong-migrations:
+    image: "${KONG_DOCKER_TAG}"
+    command: kong migrations bootstrap
+    profiles: [ "database" ]
+    depends_on:
+      - db
+    environment:
+      <<: *kong-env
+    secrets:
+      - kong_postgres_password
+    networks:
+      - kong-net
+    restart: on-failure
+
+  kong-migrations-up:
+    image: "${KONG_DOCKER_TAG}"
+    command: kong migrations up && kong migrations finish
+    profiles: [ "database" ]
+    depends_on:
+      - db
+    environment:
+      <<: *kong-env
+    secrets:
+      - kong_postgres_password
+    networks:
+      - kong-net
+    restart: on-failure
+
+  kong:
+    image: "${KONG_DOCKER_TAG}"
+    container_name: kong
+    user: "${KONG_USER}"
+    environment:
+      <<: *kong-env
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_PROXY_LISTEN: "${KONG_PROXY_LISTEN}"
+      KONG_ADMIN_LISTEN: "${KONG_ADMIN_LISTEN}"
+      KONG_ADMIN_GUI_LISTEN: "${KONG_ADMIN_GUI_LISTEN}"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_PREFIX: ${KONG_PREFIX:-/var/run/kong}
+      KONG_DECLARATIVE_CONFIG: "/opt/kong/kong.yaml"
+    secrets:
+      - kong_postgres_password
+    networks:
+      - kong-net
+      - microvik-net
+    ports:
+      # The following two environment variables default to an insecure value (0.0.0.0)
+      # according to the CIS Security test.
+      - "${KONG_INBOUND_PROXY_LISTEN}:8000:8000/tcp"
+      - "${KONG_INBOUND_SSL_PROXY_LISTEN}:8443:8443/tcp"
+      # Making them mandatory but undefined, like so would be backwards-breaking:
+      # - "${KONG_INBOUND_PROXY_LISTEN?Missing inbound proxy host}:8000:8000/tcp"
+      # - "${KONG_INBOUND_SSL_PROXY_LISTEN?Missing inbound proxy ssl host}:8443:8443/tcp"
+      # Alternative is deactivating check 5.13 in the security bench, if we consider Kong's own config to be enough security here
+
+      - "127.0.0.1:8001:8001/tcp"
+      - "127.0.0.1:8444:8444/tcp"
+      - "127.0.0.1:8002:8002/tcp"
+    healthcheck:
+      test: [ "CMD", "kong", "health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: on-failure:5
+    read_only: true
+    volumes:
+      - kong_prefix_vol:${KONG_PREFIX:-/var/run/kong}
+      - kong_tmp_vol:/tmp
+      - ./config:/opt/kong
+    security_opt:
+      - no-new-privileges
+
+  db:
+    image: postgres:9.5
+    profiles: [ "database" ]
+    environment:
+      POSTGRES_DB: ${KONG_PG_DATABASE}
+      POSTGRES_USER: ${KONG_PG_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/kong_postgres_password
+    secrets:
+      - kong_postgres_password
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-d",
+          "${KONG_PG_DATABASE}",
+          "-U",
+          "${KONG_PG_USER}"
+        ]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: on-failure
+    stdin_open: true
+    tty: true
+    networks:
+      - kong-net
+    volumes:
+      - kong_data:/var/lib/postgresql/data
+# kafka cluster
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    profiles: [ "kafka_cluster" ]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - microvik-net
+    ports:
+      - 2181:2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    profiles: [ "kafka_cluster" ]
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+      - 9997:9997
+    hostname: kafka
+    networks:
+      - microvik-net
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://${KAFKA_BROKER_IP}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9997
+      KAFKA_JMX_HOSTNAME: kafka
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    profiles: [ "kafka_cluster" ]
+    container_name: kafka-ui
+    networks:
+      - microvik-net
+    ports:
+      - 8082:8080
+    restart: always
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      SPRING_CONFIG_ADDITIONAL-LOCATION: /kafka/config.yml
+    volumes:
+      - ./config/kafka/config.yml:/kafka/config.yml
+    links:
+      - kafka
+      - zookeeper
+  pm1:
+    image: mariadb/columnstore:latest
+    shm_size: '512mb'
+    hostname: mcs1
+    container_name: mcs1
+    volumes:
+      - microvik-data-test:/var/lib/columnstore/microvik-data-test
+      - storagemanager:/var/lib/columnstore/storagemanager
+      - ./config/mariadb/mariadb.sql:/tmp/mariadb.sql
+      - ./config/mariadb/bootstrap_cs.sh:/usr/bin/bootstrap
+    env_file:
+      - .env
+    ports:
+      - 3307:3306
+
+  xpd1:
+    image: mariadb/xpand-single:latest
+    deploy:
+    ulimits:
+      memlock: -1
+    hostname: xpd1
+    container_name: xpd1
+    volumes:
+      - ./config/mariadb/xpd_setup.sh:/usr/bin/xpd_setup
+    env_file:
+      - .env
+    links:
+      - "pm1"
+    ports:
+      - 3306:3306
+secrets:
+  kong_postgres_password:
+    file: ./config/secrets/KONGDB_PASSWORD

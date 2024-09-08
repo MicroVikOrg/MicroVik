@@ -9,6 +9,8 @@ clear:
 restart:
 	make clear
 	make start
+kong-configure:
+	make add-kong-service NAME=user-manager URL=http://usermanager:8001 
 add-kong-service:
 	curl -i -X POST \
   '127.0.0.1:8001/services/' \

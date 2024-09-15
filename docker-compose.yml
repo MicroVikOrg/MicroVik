@@ -20,8 +20,6 @@ volumes:
       device: tmpfs
   microvik-data:
   redis-data:
-  microvik-data-test:
-  storagemanager:
 
 networks:
   kong-net:
@@ -192,14 +190,14 @@ services:
       - zookeeper
 # CockroachDB Node
   roach-node:
-    container_name: roach
+    container_name: roach-node
     image: cockroachdb/cockroach:latest
     ports:
       - "8083:8080"
       - "26257:26257"
-    command: bash -c "cockroach start --insecure --join=roach-node --listen-addr=roach:26257 --advertise-addr=roach:26257 --max-sql-memory=.25 --cache=.25 && cockroach init --host roach-node --insecure && /setup_db.sh"
+    command: bash -c "cockroach start --insecure --join=roach-node --listen-addr=roach:26257 --advertise-addr=roach:26257 --max-sql-memory=.25 --cache=.25"
     environment:
-      - ALLOW_EMPTY_PASSWORD=yes
+      ALLOW_EMPTY_PASSWORD: ${ALLOW_EMPTY_PASSWORD}
     volumes:
       - ./config/cockroachdb/setup_db.sh:/setup_db.sh
       - microvik-data:/cockroach/cockroach-data
@@ -216,7 +214,7 @@ services:
     environment:
       - PASSWORD=MyStrongLoginPassword
     restart: unless-stopped
-# SignUpService (DEV)
+# UserManager (DEV)
   usermanager:
     image: vga815/user-manager:dev
     container_name: usermanager
@@ -229,16 +227,37 @@ services:
         ASPNETCORE_HTTP_PORTS: 8080
 #        ASPNETCORE_HTTPS_PORTS: 8081
         BootstrapServers: ${KAFKA_BROKER_IP}:9092
-        ConnectionString: User ID=root;Password=root;Host=roach;Port=26257;Database=microvikdb;
+        ConnectionString: ${ConnectionString}
 #        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
 #        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
-        JWT_secret: TUtutu_Secret_Super_Key12345TUtutu_Secret_Super_Key12345
+        JWT_secret: ${JWT_secret}
     volumes:
       - ~/.aspnet/https:/https:ro
     depends_on:
       - kafka
       - roach-node
-
+# ChatManager (DEV)
+  chatmanager:
+    image: vga815/chat-manager:dev
+    container_name: chatmanager
+    ports:
+      - 5001:8080
+    networks:
+      - microvik-net
+    environment:
+        ASPNETCORE_ENVIRONMENT: Development
+        ASPNETCORE_HTTP_PORTS: 8080
+#        ASPNETCORE_HTTPS_PORTS: 8081
+        BootstrapServers: ${KAFKA_BROKER_IP}:9092
+        ConnectionString: ${ConnectionString}
+#        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
+#        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
+        JWT_secret: ${JWT_secret}
+    volumes:
+      - ~/.aspnet/https:/https:ro
+    depends_on:
+      - kafka
+      - roach-node
 secrets:
   kong_postgres_password:
     file: ./config/secrets/KONGDB_PASSWORD

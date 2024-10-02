@@ -32,7 +32,6 @@ services:
   kong-migrations:
     image: "${KONG_DOCKER_TAG}"
     command: kong migrations bootstrap
-    profiles: [ "database" ]
     depends_on:
       - db
     environment:
@@ -46,7 +45,6 @@ services:
   kong-migrations-up:
     image: "${KONG_DOCKER_TAG}"
     command: kong migrations up && kong migrations finish
-    profiles: [ "database" ]
     depends_on:
       - db
     environment:
@@ -106,7 +104,6 @@ services:
 
   db:
     image: postgres:9.5
-    profiles: [ "database" ]
     environment:
       POSTGRES_DB: ${KONG_PG_DATABASE}
       POSTGRES_USER: ${KONG_PG_USER}
@@ -136,7 +133,7 @@ services:
 # kafka cluster
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
-    profiles: [ "kafka_cluster" ]
+    container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -148,15 +145,13 @@ services:
   kafka:
     image: confluentinc/cp-kafka:latest
     container_name: kafka
-    profiles: [ "kafka_cluster" ]
-    depends_on:
-      - zookeeper
     ports:
       - 9092:9092
       - 9997:9997
-    hostname: kafka
     networks:
       - microvik-net
+    depends_on:
+      - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
@@ -173,7 +168,6 @@ services:
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    profiles: [ "kafka_cluster" ]
     container_name: kafka-ui
     networks:
       - microvik-net
@@ -185,9 +179,6 @@ services:
       SPRING_CONFIG_ADDITIONAL-LOCATION: /kafka/config.yml
     volumes:
       - ./config/kafka/config.yml:/kafka/config.yml
-    links:
-      - kafka
-      - zookeeper
 # CockroachDB Node
   roach-node:
     container_name: roach-node
@@ -195,7 +186,7 @@ services:
     ports:
       - "8083:8080"
       - "26257:26257"
-    command: bash -c "cockroach start --insecure --join=roach-node --listen-addr=roach:26257 --advertise-addr=roach:26257 --max-sql-memory=.25 --cache=.25"
+    command: bash -c "cockroach start --insecure --join=roach-node --listen-addr=roach-node:26257 --advertise-addr=roach-node:26257 --max-sql-memory=.25 --cache=.25"
     environment:
       ALLOW_EMPTY_PASSWORD: ${ALLOW_EMPTY_PASSWORD}
     volumes:
@@ -231,6 +222,7 @@ services:
 #        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
 #        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
         JWT_secret: ${JWT_secret}
+        HASH_secret: ${HASH_secret}
     volumes:
       - ~/.aspnet/https:/https:ro
     depends_on:
@@ -258,6 +250,27 @@ services:
     depends_on:
       - kafka
       - roach-node
+# EmailVerifier
+  emailverifier:
+    image: aim41tt/email-verifier:latest
+    container_name: email-verifier
+    environment:
+      WORKLINE_URL: http://${KAFKA_BROKER_IP}:5002
+      EMAIL_VERIFICATION_TEXT: "please verify your email "
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BROKER_IP}:9092
+      KAFKA_LISTENER_CONCURRENCY: 3
+      CONSUMER_GROUP_ID: test
+      WORKLINE_URL_USERMENAGER: http://${KAFKA_BROKER_IP}:5000/api/users/check_email
+      GMAIL_USERNAME: ${GMAIL_USERNAME}
+      GMAIL_PASSWORD_APP: ${GMAIL_PASSWORD_APP}
+    ports:
+      - "5002:8080"
+    depends_on:
+      - kafka
+      - usermanager
+      - roach-node
+    networks:
+      - microvik-net
 secrets:
   kong_postgres_password:
     file: ./config/secrets/KONGDB_PASSWORD

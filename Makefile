@@ -3,6 +3,8 @@ start:
 	sleep 20
 	make cockroach-configure
 	make kong-configure
+check:
+	docker compose up -d
 clear:
 	docker compose down --volumes
 restart:

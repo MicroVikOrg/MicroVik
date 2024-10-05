@@ -1,0 +1,17 @@
+{
+    "token_hmac_secret_key": "my_secret",
+    "api_key": "my_api_key",
+    "admin_password": "password",
+    "admin_secret": "secret",
+    "admin": true,
+    "engine":"redis",
+    "redis_address":"redis:6379",
+    "redis_user":"redis",
+    "redis_password":"redis",
+    "redis_db": 0,
+    "redis_tls": false,
+    "allow_subscribe_for_client": true,
+    "allow_subscribe_for_anonymous": true,
+    "user_subscribe_to_personal": true,
+    "user_personal_single_connection": false
+  }

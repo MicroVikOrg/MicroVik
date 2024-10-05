@@ -21,9 +21,17 @@ kong-configure:
 	make kong-upstreams-configure
 kong-upstreams-configure:
 	curl -X POST http://localhost:8001/upstreams --data name=usermanager_upstream
+	curl -X POST http://localhost:8001/upstreams --data name=chatmanager_upstream
+	curl -X POST http://localhost:8001/upstreams --data name=msgmanager_upstream
 	curl -i -X POST 127.0.0.1:8001/upstreams/usermanager_upstream/targets \
 		--form 'target="usermanager:8080"'
+	curl -i -X POST 127.0.0.1:8001/upstreams/chatmanager_upstream/targets \
+		--form 'target="chatmanager:8080"'
+	curl -i -X POST 127.0.0.1:8001/upstreams/msgmanager_upstream/targets \
+		--form 'target="messagesmanager:8080"'
 	make add-kong-service NAME=usermanager HOST=usermanager_upstream
+	make add-kong-service NAME=chatmanager HOST=chatmanager_upstream
+	make add-kong-service NAME=msgmanager HOST=msgmanager_upstream
 cockroach-configure:
 	docker exec -it roach-node bash /setup_db.sh
 add-kong-service:

@@ -271,6 +271,79 @@ services:
       - roach-node
     networks:
       - microvik-net
+# Centrifugo
+  centrifugo:
+    container_name: centrifugo
+    image: centrifugo/centrifugo:v5
+    volumes:
+      - ./config/centrifugo/config.json:/centrifugo/config.json
+    command: centrifugo -c config.json --api_insecure --swagger
+    ports:
+      - 5003:8000
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    depends_on:
+      - redis
+    networks:
+      - microvik-net
+# MessagesManager (DEV)
+  messagesmanager:
+    image: vga815/messages-manager:dev
+    container_name: messagesmanager
+    ports:
+      - 5004:8080
+    networks:
+      - microvik-net
+    environment:
+        ASPNETCORE_ENVIRONMENT: Development
+        ASPNETCORE_HTTP_PORTS: 8080
+#        ASPNETCORE_HTTPS_PORTS: 8081
+        BootstrapServers: ${KAFKA_BROKER_IP}:9092
+        ConnectionString: ${ConnectionString}
+#        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
+#        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
+        JWT_secret: ${JWT_secret}
+        RedisConnectionString: ${RedisConnectionString}
+    volumes:
+      - ~/.aspnet/https:/https:ro
+    depends_on:
+      - kafka
+      - roach-node
+      - centrifugo
+# Redis
+  redis:
+    image: redis:latest
+    container_name: redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_USER=${REDIS_USER}
+      - REDIS_USER_PASSWORD=${REDIS_USER_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/var/lib/redis/data
+      - ./config/redis/redis.conf:/etc/redis/redis.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    command: redis-server /etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$REDIS_PASSWORD", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    networks:
+      - microvik-net
 secrets:
   kong_postgres_password:
     file: ./config/secrets/KONGDB_PASSWORD

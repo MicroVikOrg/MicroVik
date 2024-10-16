@@ -13,5 +13,6 @@
     "allow_subscribe_for_client": true,
     "allow_subscribe_for_anonymous": true,
     "user_subscribe_to_personal": true,
-    "user_personal_single_connection": false
+    "user_personal_single_connection": false,
+    "prometheus": true
   }

@@ -20,6 +20,7 @@ volumes:
       device: tmpfs
   microvik-data:
   redis-data:
+  vault-data:
 
 networks:
   kong-net:
@@ -98,7 +99,7 @@ services:
     volumes:
       - kong_prefix_vol:${KONG_PREFIX:-/var/run/kong}
       - kong_tmp_vol:/tmp
-      - ./config:/opt/kong
+      - ./config/kong:/opt/kong
     security_opt:
       - no-new-privileges
 
@@ -219,7 +220,6 @@ services:
 #        ASPNETCORE_HTTPS_PORTS: 8081
         BootstrapServers: ${KAFKA_BROKER_IP}:9092
         ConnectionString: ${ConnectionString}
-#        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
 #        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
         JWT_secret: ${JWT_secret}
         HASH_secret: ${HASH_secret}
@@ -242,7 +242,6 @@ services:
 #        ASPNETCORE_HTTPS_PORTS: 8081
         BootstrapServers: ${KAFKA_BROKER_IP}:9092
         ConnectionString: ${ConnectionString}
-#        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
 #        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
         JWT_secret: ${JWT_secret}
     volumes:
@@ -302,7 +301,6 @@ services:
 #        ASPNETCORE_HTTPS_PORTS: 8081
         BootstrapServers: ${KAFKA_BROKER_IP}:9092
         ConnectionString: ${ConnectionString}
-#        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
 #        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
         JWT_secret: ${JWT_secret}
         RedisConnectionString: ${RedisConnectionString}
@@ -345,6 +343,23 @@ services:
     stdin_open: true
     networks:
       - microvik-net
+# Vault
+  vault:
+    image: hashicorp/vault:latest
+    container_name: vault
+    volumes:
+      - ./config/vault/config:/vault/config
+      - ./config/vault/policies:/vault/policies
+      - vault-data:/vault/data
+    ports:
+      - 8200:8200
+    environment:
+      - VAULT_ADDR=http://0.0.0.0:8200
+      - VAULT_API_ADDR=http://0.0.0.0:8200
+      - VAULT_ADDRESS=http://0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    command: vault server -config=/vault/config/vault.json
 secrets:
   kong_postgres_password:
     file: ./config/secrets/KONGDB_PASSWORD

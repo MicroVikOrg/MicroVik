@@ -2,7 +2,7 @@ kafka:
   clusters:
     -
       name: local
-      bootstrapServers: PLAINTEXT://kafka:29092
+      bootstrapServers: PLAINTEXT://kafka:9092
       schemaRegistry: http://localhost:8085
       schemaRegistryAuth:
         username: kafka

@@ -28,6 +28,8 @@ networks:
   microvik-net:
     driver: bridge
 
+name: microvik
+
 services:
 # kong 
   kong-migrations:
@@ -42,6 +44,8 @@ services:
     networks:
       - kong-net
     restart: on-failure
+    profiles:
+      - infra
 
   kong-migrations-up:
     image: "${KONG_DOCKER_TAG}"
@@ -55,6 +59,8 @@ services:
     networks:
       - kong-net
     restart: on-failure
+    profiles:
+      - infra
 
   kong:
     image: "${KONG_DOCKER_TAG}"
@@ -102,6 +108,8 @@ services:
       - ./config/kong:/opt/kong
     security_opt:
       - no-new-privileges
+    profiles:
+      - infra
 
   db:
     image: postgres:9.5
@@ -131,6 +139,8 @@ services:
       - kong-net
     volumes:
       - kong_data:/var/lib/postgresql/data
+    profiles:
+      - infra
 # kafka cluster
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
@@ -142,6 +152,8 @@ services:
       - microvik-net
     ports:
       - 2181:2181
+    profiles:
+      - infra
 
   kafka:
     image: confluentinc/cp-kafka:latest
@@ -156,7 +168,7 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://${KAFKA_BROKER_IP}:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
@@ -166,6 +178,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_JMX_PORT: 9997
       KAFKA_JMX_HOSTNAME: kafka
+    profiles:
+      - infra
+    volumes:
+      - ./config/kafka/setup_kafka.sh:/setup_kafka.sh
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -180,6 +196,8 @@ services:
       SPRING_CONFIG_ADDITIONAL-LOCATION: /kafka/config.yml
     volumes:
       - ./config/kafka/config.yml:/kafka/config.yml
+    profiles:
+      - infra
 # CockroachDB Node
   roach-node:
     container_name: roach-node
@@ -187,7 +205,7 @@ services:
     ports:
       - "8083:8080"
       - "26257:26257"
-    command: bash -c "cockroach start --insecure --join=roach-node --listen-addr=roach-node:26257 --advertise-addr=roach-node:26257 --max-sql-memory=.25 --cache=.25"
+    command: bash -c "cockroach start --insecure --join=${NODE_IP}:26257 --advertise-http-addr=${NODE_IP}:8083 --listen-addr=roach-node:26257 --advertise-addr=${NODE_IP}:26257 --max-sql-memory=.25 --cache=.25"
     environment:
       ALLOW_EMPTY_PASSWORD: ${ALLOW_EMPTY_PASSWORD}
     volumes:
@@ -195,6 +213,8 @@ services:
       - microvik-data:/cockroach/cockroach-data
     networks:
       - microvik-net
+    profiles:
+      - infra
 # Dashboard
   flame:
     image: pawelmalak/flame
@@ -206,9 +226,11 @@ services:
     environment:
       - PASSWORD=MyStrongLoginPassword
     restart: unless-stopped
-# UserManager (DEV)
+    profiles:
+      - services
+# UserManager
   usermanager:
-    image: vga815/user-manager:dev
+    image: vga815/user-manager:latest
     container_name: usermanager
     ports:
       - 5000:8080
@@ -216,21 +238,23 @@ services:
       - microvik-net
     environment:
         ASPNETCORE_ENVIRONMENT: Development
-        ASPNETCORE_HTTP_PORTS: 8080
-#        ASPNETCORE_HTTPS_PORTS: 8081
         BootstrapServers: ${KAFKA_BROKER_IP}:9092
         ConnectionString: ${ConnectionString}
-#        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
+        ASPNETCORE_HTTPS_PORTS: 8081
+        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/usermanager.pfx
+        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
         JWT_secret: ${JWT_secret}
         HASH_secret: ${HASH_secret}
     volumes:
-      - ~/.aspnet/https:/https:ro
+      - ./config/certs/usermanager:/https
     depends_on:
       - kafka
       - roach-node
-# ChatManager (DEV)
+    profiles:
+      - services
+# ChatManager
   chatmanager:
-    image: vga815/chat-manager:dev
+    image: vga815/chat-manager:latest
     container_name: chatmanager
     ports:
       - 5001:8080
@@ -238,18 +262,20 @@ services:
       - microvik-net
     environment:
         ASPNETCORE_ENVIRONMENT: Development
-        ASPNETCORE_HTTP_PORTS: 8080
-#        ASPNETCORE_HTTPS_PORTS: 8081
+        ASPNETCORE_HTTPS_PORTS: 8081
         BootstrapServers: ${KAFKA_BROKER_IP}:9092
         ConnectionString: ${ConnectionString}
-#        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
+        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/chatmanager.pfx
+        ASPNETCORE_Kestrel__Certificates__Default__Password: vga
         JWT_secret: ${JWT_secret}
     volumes:
-      - ~/.aspnet/https:/https:ro
+      - ./config/certs/chatmanager:/https
     depends_on:
       - kafka
       - roach-node
-# EmailVerifier
+    profiles:
+      - services
+# EmailVerifier (DEV)
   emailverifier:
     image: aim41tt/email-verifier:latest
     container_name: email-verifier
@@ -270,6 +296,8 @@ services:
       - roach-node
     networks:
       - microvik-net
+    profiles:
+      - services
 # Centrifugo
   centrifugo:
     container_name: centrifugo
@@ -287,6 +315,8 @@ services:
       - redis
     networks:
       - microvik-net
+    profiles:
+      - infra
 # MessagesManager (DEV)
   messagesmanager:
     image: vga815/messages-manager:dev
@@ -311,6 +341,31 @@ services:
       - kafka
       - roach-node
       - centrifugo
+    profiles:
+      - services
+# Master (DEV)
+  master:
+    image: vga815/master:dev
+    container_name: master
+    ports:
+      - 5006:8080
+    networks:
+      - microvik-net
+    environment:
+        ASPNETCORE_ENVIRONMENT: Development
+        ASPNETCORE_HTTP_PORTS: 8080
+        REGISTRY_URL: ${REGISTRY_URL}
+        NODE_KEY: ${NODE_KEY}
+#        ASPNETCORE_HTTPS_PORTS: 8081
+#        ASPNETCORE_Kestrel__Certificates__Default__Path: /https/UserManager.pfx
+    volumes:
+      - ~/.aspnet/https:/https:ro
+    depends_on:
+      - kafka
+      - roach-node
+      - centrifugo
+    profiles:
+      - services
 # Redis
   redis:
     image: redis:latest
@@ -343,6 +398,8 @@ services:
     stdin_open: true
     networks:
       - microvik-net
+    profiles:
+      - infra
 # Vault
   vault:
     image: hashicorp/vault:latest
@@ -360,6 +417,8 @@ services:
     cap_add:
       - IPC_LOCK
     command: vault server -config=/vault/config/vault.json
+    profiles:
+      - infra
 secrets:
   kong_postgres_password:
     file: ./config/secrets/KONGDB_PASSWORD

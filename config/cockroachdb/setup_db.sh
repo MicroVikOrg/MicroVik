@@ -14,7 +14,7 @@ $SQL -d microvikdb -e "CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     verified BOOLEAN,
-    token TEXT DEFAULT NULL
+    node_id UUID DEFAULT NULL
 );"
 
 $SQL -d microvikdb -e "CREATE TABLE IF NOT EXISTS chats (
@@ -29,6 +29,7 @@ $SQL -d microvikdb -e "CREATE TABLE IF NOT EXISTS messages (
     chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
     sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
     content TEXT,
+    node_id UUID NOT NULL,
     timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );"
 
